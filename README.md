@@ -2,19 +2,20 @@
 
 Núcleo compartido de asistencia por rostro. Lo usan Agrovid y un producto de asistencia para cualquier negocio.
 
-**Estado:** fase F1 (ver `docs/superpowers/specs/2026-11-14-nucleo-compartido-limites-y-puertos-design.md`, sección 13).
+**Estado:** fase F2: lógica pura, puertos y `AttendanceService` (ver `docs/superpowers/specs/2026-11-14-nucleo-compartido-limites-y-puertos-design.md`, sección 13).
 
 ## Qué hay
 
 | Ruta | Qué es |
 |---|---|
-| `packages/domain` | `@kgamboa/attendance-domain`: modelo y lógica pura (decisión de coincidencia, lista y faltantes, rotación, geocerca, reporte, sello de foto, importación). Sin nube ni framework |
+| `packages/domain` | `@kgamboa/attendance-domain`: modelo, lógica pura (decisión de coincidencia, lista y faltantes, rotación, geocerca, reporte, sello de foto, importación), **puertos** (`AttendanceStore`, `FaceRecognition`, `BlobStorage`, `Platform`, `Brand`) y `AttendanceService`. Sin nube ni framework |
 | `docs/superpowers/specs` | Diseños: límites y puertos, benchmark de la competencia |
 
 ## Reglas
 
 - **El núcleo no depende de nada de afuera.** Solo importa archivos propios y `jpeg-js`, no lee variables de entorno y no menciona servicios de nube. Lo vigila `src/architecture.test.ts`.
 - **Vocabulario genérico:** sitio (`siteId`, `areaId`) y grupo (`groupId`). Cada aplicación traduce al suyo en su adaptador.
+- **Se usa implementando los puertos:** cada aplicación aporta su almacén, su reconocimiento facial y su almacén de archivos. Para pruebas hay dobles en memoria en `@kgamboa/attendance-domain/dist/testing` (no forman parte del índice público).
 - **Los datos no se migran:** los nombres de las bases de datos de cada aplicación no cambian.
 
 ## Comandos
