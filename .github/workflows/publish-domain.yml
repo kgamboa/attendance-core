@@ -1,0 +1,35 @@
+name: Publicar attendance-domain
+
+# Se publica al crear una etiqueta `domain-v<versión>` (por ejemplo domain-v0.1.0) que coincida
+# con la versión de packages/domain/package.json. No se publica solo al fusionar.
+on:
+  push:
+    tags: ["domain-v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@kgamboa"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: La etiqueta debe coincidir con la versión del paquete
+        run: |
+          v=$(node -p "require('./packages/domain/package.json').version")
+          test "${GITHUB_REF_NAME}" = "domain-v${v}" || { echo "La etiqueta ${GITHUB_REF_NAME} no coincide con la versión ${v}"; exit 1; }
+      - run: pnpm --filter @kgamboa/attendance-domain build
+      - run: pnpm --filter @kgamboa/attendance-domain publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

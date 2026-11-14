@@ -13,7 +13,10 @@
 | D3 | El núcleo se **mueve** desde Agrovid (con sus pruebas), no se copia: una sola fuente de verdad | Propuesta de este documento |
 | D4 | Agrovid **consume** el núcleo y conserva sus adaptadores y su API actual; el producto trae los suyos | Propuesta |
 | D5 | Agrovid **no** se convierte en cliente de un servicio `attendance-core` (opción D de la discusión): la migración sería grande y no aporta al producto | Propuesta |
-| D6 | Plataforma de la primera versión del producto: **AWS**, porque los adaptadores ya existen. Cloudflare queda como revisión posterior si el costo lo pide (sección 9) | Propuesta, por confirmar |
+| D6 | Plataforma de la primera versión del producto: **AWS**, porque los adaptadores ya existen. Cloudflare queda como revisión posterior si el costo lo pide (sección 9) | Karlo, 2026-11-14 (confirmada) |
+| D7 | Vocabulario del núcleo: **sitio** y **grupo** | Karlo, 2026-11-14 |
+| D8 | El paquete se publica en **GitHub Packages** (privado) | Karlo, 2026-11-14 |
+| D9 | Este documento queda **aprobado** y se arranca la F1 | Karlo, 2026-11-14 |
 
 ## 2. Qué cambia respecto al diseño del 8 de octubre
 
@@ -231,9 +234,53 @@ Se puede revisar si el costo del producto lo pide. Si hiciera falta, un adaptado
 
 ## 12. Decisiones que quedan abiertas
 
-1. **Q1** Nombres definitivos del vocabulario: ¿"sitio" y "grupo" (propuesta), o "ubicación" y "equipo"?
-2. **Q2** Registro del paquete: ¿GitHub Packages privado o dependencia por etiqueta de Git?
+1. ~~**Q1** Nombres del vocabulario~~ Resuelta: **sitio** y **grupo** (D7).
+2. ~~**Q2** Registro del paquete~~ Resuelta: **GitHub Packages** (D8).
 3. **Q3** ¿Los adaptadores de AWS viven en un paquete compartido (`packages/adapter-aws`) o cada aplicación trae los suyos? Recomendación: compartido, para que el producto y Agrovid no los dupliquen; se decide al terminar F3.
-4. **Q4** Plataforma de la primera versión del producto (D6): AWS por confirmar.
+4. ~~**Q4** Plataforma de la primera versión~~ Resuelta: **AWS** (D6).
 5. **Q5** ¿Cuándo entra la caseta al núcleo? Cuando el producto la pida.
 6. **Q6** Modelo de horarios (por grupo, por persona o ambos), que afecta al núcleo en la fase F2 o después.
+
+## 13. Estado de la ejecución
+
+### F0 — hecha
+Documento aprobado el 2026-11-14 con las decisiones D6 a D9.
+
+### F1 — entregada (2026-11-14, en el PR de este documento)
+Qué contiene:
+
+- **Monorepo pnpm** con `packages/domain` (`@kgamboa/attendance-domain` 0.1.0, TypeScript, CommonJS, con tipos). El código fuente de aplicaciones aún no existe.
+- **CI** (`.github/workflows/ci.yml`): `typecheck`, pruebas y compilación en cada PR y en `main`.
+- **Lógica pura portada desde Agrovid con sus pruebas** (101 pruebas en total: 72 de la lógica, portadas o nuevas, y 29 de arquitectura): decisión de coincidencia, lista y faltantes, rotación, geometría y geocerca, reporte (retardos, horas, rango), recorte y tapado de rostros, sello de foto, lectura e importación de personal, y el modelo con vocabulario genérico.
+- **Valores por defecto de la política** (`DEFAULT_ATTENDANCE_POLICY`).
+- **Prueba de arquitectura** que falla si el núcleo importa algo que no sea un archivo propio o `jpeg-js`, lee `process.env` o menciona servicios de nube. Se comprobó que detecta una violación.
+- **Flujo de publicación** (`publish-domain.yml`): al crear la etiqueta `domain-v<versión>` verifica que coincida con la versión del paquete y publica en GitHub Packages. **No está probado** hasta que se publique la primera versión.
+
+Cambios respecto a lo previsto en la sección 4:
+
+| Tema | Qué se hizo |
+|---|---|
+| Logo del sello | `renderStamp` recibe `logo?: StampLogo` (ancho, alto y bytes RGBA). Sin logo no dibuja placa ni marca. El logo de Agrovid se queda en Agrovid. Aún no es el puerto `Brand` completo (falta el rótulo de texto) |
+| `crypto` y `zlib` de Node | **Ya no hacen falta en el núcleo:** `zlib` solo se usaba para el logo, que salió. El núcleo todavía usa el tipo `Buffer` de Node, que se revisa antes de apuntar a otra plataforma |
+| Políticas | El núcleo solo trae el tipo y los valores por defecto. Leerlos del catálogo de configuración (`policyFromResolved`) se queda en Agrovid. Los ajustes de caseta (`gate*`) y la bandera `gate` no están en el núcleo |
+| Mensajes de importación | `planImport` acepta `groupLabel` ("cuadrilla", "equipo"…) para que la advertencia hable como la aplicación |
+| Prueba de zona horaria | Se porta lo que prueba la lógica pura; lo que toca el servicio y el Excel se queda en Agrovid |
+
+**Qué no entró en la F1:** el servicio (`AttendanceService`), los puertos y el repositorio (F2); los adaptadores y la adopción por Agrovid (F3).
+
+### Para la F3 (traducción en el adaptador de Agrovid)
+Nombres que cambian entre Agrovid y el núcleo, a traducir sin migrar datos:
+
+| Agrovid | Núcleo |
+|---|---|
+| `loteId`, `moduleId` | `siteId`, `areaId` |
+| `crewId`, `crewIds`, `CrewAssignment` | `groupId`, `groupIds`, `GroupAssignment` |
+| `crewLeaderCanTake` (política) | `groupLeaderCanTake` |
+| bandera de registro `OUTSIDE_LOTE` | `OUTSIDE_SITE` (el adaptador la traduce al leer y escribir) |
+| clave `crew` del mapa de columnas de la importación | `group` |
+| `isOutsideLote` | `isOutsideSite` |
+| `planImport(..., crews)` con texto "La cuadrilla…" | `planImport(..., groups, { groupLabel: 'cuadrilla' })`; el texto cambia ligeramente |
+
+**Riesgo conocido:** `DEFAULT_ATTENDANCE_POLICY` repite los valores del catálogo de Agrovid. Hasta la F3 pueden desfasarse; en la F3 el catálogo debe apoyarse en esos valores.
+
+**Requisito de la F3:** para que el despliegue de Agrovid instale el paquete privado, su CI necesita un token con permiso `read:packages`, y el paquete debe darle acceso al repositorio de Agrovid.
