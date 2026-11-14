@@ -172,6 +172,8 @@ export interface Clock { now(): Date }
 export interface Logger { info(m: string, f?: object): void; warn(m: string, f?: object): void; error(m: string, f?: object): void }
 ```
 
+> **Ajuste de la F2 (2026-11-14):** al portar el servicio se vio que solo usa cinco puertos: `AttendanceStore`, `FaceRecognition`, `BlobStorage`, `Platform` (identificadores y hashes) y `Brand` (logo del sello), más un reloj (`now`). `SiteDirectory`, `GroupDirectory`, `PolicyProvider`, `Notifier` y `Logger` **no se implementaron**: hoy el servicio recibe la política en cada llamada, no consulta nombres de sitios ni de grupos y no emite avisos (los emite el manejador de cada aplicación). Se agregarán cuando algo del núcleo los necesite, no antes.
+
 **Eventos del `Notifier`:** `SESSION_OPENED`, `PHOTO`, `RESOLVED`, `CLOSED`, `CONSENT`, `ENROLLED`, `PRE_TERMINATION`, `RECOMMEND_TERMINATION`, `TERMINATED`, `GEOFENCE_BLOCKED`. Hoy los textos en español de `attendance-supervision.ts` pasan al adaptador de Agrovid; el producto traerá los suyos (correo, Telegram, webhook).
 
 **Qué ya estaba listo:** `FaceRecognition` y `AttendanceStorage` ya son interfaces y el servicio ya las recibe por constructor. **Lo que falta:** el repositorio (hoy una clase concreta), las políticas, el directorio de sitios y grupos, el notificador y la marca.
@@ -268,6 +270,28 @@ Cambios respecto a lo previsto en la sección 4:
 
 **Qué no entró en la F1:** el servicio (`AttendanceService`), los puertos y el repositorio (F2); los adaptadores y la adopción por Agrovid (F3).
 
+### F2 — entregada (2026-11-14)
+
+Qué contiene (en `packages/domain`, 159 pruebas en total):
+
+- **Puertos** (`ports.ts`): `AttendanceStore`, `FaceRecognition`, `BlobStorage`, `Platform` y `Brand`, con la regla de que todo acceso al almacén va acotado por empresa.
+- **`AttendanceService` generalizado** (`attendance-service.ts`, unas 750 líneas): enrolar, abrir lista, identificar (con vista previa y sin lista), resolver, cerrar con rotación, pre-baja, baja y borrado biométrico, sello de foto y reporte. Recibe `{ store, faces, storage, platform, brand?, now?, accessCode? }`.
+- **Llaves de archivos** (`storage-keys.ts`): `enrollKey`, `sessionPhotoKey`, `signatureKey` y `keyBelongsToTenant`.
+- **Dobles en memoria** (`testing/`): `InMemoryStore`, `InMemoryBlobStorage`, `FakeFaces`, `testPlatform`. No se exportan desde el índice (usan `crypto` de Node); se importan desde `@kgamboa/attendance-domain/dist/testing`.
+- **Pruebas:** las 42 del servicio de Agrovid portadas y verdes, más 9 nuevas sobre lo propio del núcleo (ganchos, formatos de identificadores, llaves de archivos y marca del sello).
+
+Cambios respecto a lo previsto:
+
+| Tema | Qué se hizo |
+|---|---|
+| Código de acceso (caseta) | `closeSession` ya no genera el código: recibe `accessCode?: () => string`. Sin él no se guarda `gateCode`. La lógica de la caseta (`newGateCode`, pases) sigue en Agrovid |
+| Identificación sin lista | `identifyAtGate` pasa a ser **`identifyAnyone`**, con tipos `OpenFaceResult` y `StatusRef`: sirve a un quiosco o una caseta. El núcleo no sabe qué es la caseta |
+| `crypto` | El núcleo no lo importa: `randomUUID`, SHA-1 y SHA-256 llegan por `Platform`. Los helpers de llaves reciben `newId` |
+| Formatos de identificador | **Se conservan idénticos** para no migrar datos: `att_<fecha>_<sitio>_<área>_c<grupo>`, `rec_<24 hex>`, `emp_`, `asg_`, `del_` |
+| Sello de foto | Usa `brand.logo`; el texto de una captura fuera de sitio pasa de "FUERA DEL LOTE" a **"FUERA DEL SITIO"**. Se quitó la opción `loteName` (no se usaba) |
+
+**Qué no entró en la F2:** `SiteDirectory`, `GroupDirectory`, `PolicyProvider`, `Notifier` y `Logger` (ver la nota de la sección 6); los adaptadores de AWS y la adopción por Agrovid (F3).
+
 ### Para la F3 (traducción en el adaptador de Agrovid)
 Nombres que cambian entre Agrovid y el núcleo, a traducir sin migrar datos:
 
@@ -280,6 +304,13 @@ Nombres que cambian entre Agrovid y el núcleo, a traducir sin migrar datos:
 | clave `crew` del mapa de columnas de la importación | `group` |
 | `isOutsideLote` | `isOutsideSite` |
 | `planImport(..., crews)` con texto "La cuadrilla…" | `planImport(..., groups, { groupLabel: 'cuadrilla' })`; el texto cambia ligeramente |
+| `AttendanceService({ repo, faces, storage, now })` | `AttendanceService({ store, faces, storage, platform, brand?, now?, accessCode? })` |
+| `assignCrew`, `identifyAtGate`, tipos `GateFaceResult` y `GateRef` | `assignGroup`, `identifyAnyone`, `OpenFaceResult` y `StatusRef` |
+| propiedad `inCrew` en los candidatos de `identify` y `outsideLote` en `Gps` | `inGroup` y `outsideSite` (la Mini App de Agrovid recibe `inCrew`: el adaptador lo traduce) |
+| `sessionIdFor(date, loteId, moduleId, crewId)`, `recordIdFor(sessionId, …)` | `sessionIdFor(date, siteId, areaId, groupId)` (mismo formato) y `recordIdFor(platform, sessionId, …)` |
+| `newGateCode()` dentro de `closeSession` | Agrovid pasa su `newGateCode` como `accessCode` |
+| texto del sello "FUERA DEL LOTE"; opción `loteName` de `stampedPhoto` | "FUERA DEL SITIO"; opción eliminada |
+| `enrollKey`, `sha256`… de `attendance-storage.service` | `enrollKey(…, newId)` de `storage-keys`; el hash lo da `Platform.sha256Hex` |
 
 **Riesgo conocido:** `DEFAULT_ATTENDANCE_POLICY` repite los valores del catálogo de Agrovid. Hasta la F3 pueden desfasarse; en la F3 el catálogo debe apoyarse en esos valores.
 

@@ -15,6 +15,10 @@ describe('arquitectura del núcleo', () => {
     expect(files.length).toBeGreaterThan(10);
   });
 
+  test('el índice público no exporta los dobles de prueba (src/testing usa crypto de Node)', () => {
+    expect(readFileSync(join(SRC, 'index.ts'), 'utf8')).not.toMatch(/testing/);
+  });
+
   test.each(files)('%s solo importa archivos propios y paquetes permitidos', (file) => {
     const text = readFileSync(join(SRC, file), 'utf8');
     const specs = [...text.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
