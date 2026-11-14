@@ -1,5 +1,7 @@
 # attendance-core — Diseño
 
+> **Actualización 2026-11-14:** el rumbo de este diseño cambió. El reconocimiento facial ya existe (en Agrovid) y se extraerá como núcleo compartido. Ver `2026-11-14-nucleo-compartido-limites-y-puertos-design.md`; el plan de fases 0 a 1 quedó superado. Este documento se conserva como contexto.
+
 Fecha: 2026-10-08 · Estado: borrador para revisión
 
 ## 1. Objetivo
