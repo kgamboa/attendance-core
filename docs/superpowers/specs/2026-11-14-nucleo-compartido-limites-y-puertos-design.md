@@ -315,3 +315,48 @@ Nombres que cambian entre Agrovid y el núcleo, a traducir sin migrar datos:
 **Riesgo conocido:** `DEFAULT_ATTENDANCE_POLICY` repite los valores del catálogo de Agrovid. Hasta la F3 pueden desfasarse; en la F3 el catálogo debe apoyarse en esos valores.
 
 **Requisito de la F3:** para que el despliegue de Agrovid instale el paquete privado, su CI necesita un token con permiso `read:packages`, y el paquete debe darle acceso al repositorio de Agrovid.
+
+## 14. F3 — Agrovid adopta el núcleo (plan, 2026-11-14)
+
+Estado: **plan listo; sin PR en Agrovid** hasta cumplir los requisitos de la sección 14.1.
+
+### 14.1 Requisitos previos (no se pueden hacer desde el código)
+
+1. **Publicar la primera versión:** crear la etiqueta `domain-v0.1.0` en este repositorio. El flujo `publish-domain.yml` nunca se ha ejecutado; la primera corrida es su prueba.
+2. **Acceso a GitHub Packages desde Agrovid:** darle al repositorio `Agrovid` acceso de lectura al paquete y un token con `read:packages` como secreto de CI (`ci-dev.yml` corre `npm ci` en `aws-serverless` y `sam build`). Agrovid no tiene `.npmrc`: se agrega con `@kgamboa:registry=https://npm.pkg.github.com` y `_authToken=${NODE_AUTH_TOKEN}`.
+3. **Equipos de desarrollo:** `deploy.ps1` corre `npm ci` en Windows; cada máquina que despliega necesita el mismo token (variable `NODE_AUTH_TOKEN`). Alternativa provisional sin token: versionar el `.tgz` en `aws-serverless/vendor/` y apuntar la dependencia a `file:`. Es más simple pero hay que actualizarlo a mano.
+
+### 14.2 Qué se comprobó (prueba de consumo, sin subir nada)
+
+En una copia limpia de Agrovid `main`, con el núcleo empaquetado (`npm pack`, 39 archivos) e instalado como tarball:
+
+- `decide-match`, `rotation`, `face-crop` y `geofence-block` se reemplazaron por reexportaciones del núcleo.
+- `tsc --noEmit` limpio; las **22 suites / 188 pruebas** de asistencia pasan sin tocar una sola prueba.
+- `esbuild` (mismas opciones que SAM: `--bundle`, `--platform=node`, `--target=es2020`, `--minify`, `@aws-sdk/*` externo) empaqueta el módulo en 57 KB: el paquete CommonJS se compila bien en el despliegue.
+
+Es decir: consumir el paquete funciona; lo que falta es publicarlo y la parte difícil (14.3, etapas b y c).
+
+### 14.3 Etapas (un PR por etapa; cada una deja `main` verde y se puede revertir sola)
+
+| Etapa | Qué | Cuánto toca | Compuerta |
+|---|---|---|---|
+| **F3a** | Hojas sin cambio de nombres: `decide-match`, `rotation`, `face-crop`, `geofence-block`, `geo` (con alias `isOutsideLote` → `isOutsideSite`), `stamp` y `stamp-font` (el logo de Agrovid se pasa por un envoltorio). Se borran los archivos movidos | 7 módulos, 1 a 2 importadores no-prueba cada uno | Pruebas existentes de asistencia sin editar, `tsc`, `sam build` |
+| **F3b** | `report`, `roster`, modelo e importación de personal. Capa de traducción de nombres: `loteId↔siteId`, `moduleId↔areaId`, `crewId↔groupId`, `inCrew↔inGroup`, `OUTSIDE_LOTE↔OUTSIDE_SITE`, columna `crew→group`, rótulo "FUERA DEL LOTE" | `report` 4 importadores, modelo 6; salida de la API y la web | Pruebas de contrato de la API sin cambios (la API sigue hablando "lote/cuadrilla") |
+| **F3c** | `AttendanceService` y adaptadores: `AttendanceStore` sobre DynamoDB (traduce nombres al leer y escribir, **sin migrar datos**), `FaceRecognition` sobre Rekognition, `BlobStorage` sobre S3, `Platform`, `Brand` (logo), `accessCode`. Se borran `attendance.service.ts` (742 líneas) y las partes de `attendance.repo.ts` que pasan al adaptador | Servicio, repositorio y 3 manejadores (396, 411 y 285 líneas) | **Pruebas de paridad:** las 42 pruebas del servicio de Agrovid corren contra el núcleo con los adaptadores y deben dar el mismo resultado; más una prueba de que los identificadores generados siguen el formato antiguo |
+
+### 14.4 Reglas
+
+- No se borra nada hasta que las pruebas del propio Agrovid pasen contra el núcleo (es el requisito de la sección 9).
+- Los formatos de identificadores y de llaves de S3 no cambian: sin migración.
+- Cada etapa sube la versión del núcleo solo si hubo que cambiarlo; los cambios al núcleo se hacen aquí primero y Agrovid solo actualiza la dependencia.
+- **Reversión:** cada etapa es un PR independiente; revertirlo devuelve los archivos borrados. Se despliega a dev y se prueba el pase de lista en la Mini App antes de la siguiente.
+- Ante cualquier diferencia de comportamiento en la paridad, gana Agrovid: se corrige el núcleo.
+
+### 14.5 Riesgos propios de la F3
+
+| Riesgo | Mitigación |
+|---|---|
+| El despliegue falla por falta de token | Requisito 14.1.2 y 14.1.3 antes del primer PR; la F3a es la prueba |
+| Cambio de forma en la salida (`crewId` → `groupId`) rompe web o API | La traducción vive en Agrovid; el contrato externo no cambia |
+| Adaptador DynamoDB con diferencias sutiles (condiciones, índices, escritura atómica) | Pruebas de paridad en F3c y despliegue a dev antes de producción |
+| Dependencia de un paquete privado en `sam build --cached` | Verificar en la primera corrida de CI; plan B: `.tgz` versionado |
